@@ -1,0 +1,35 @@
+#ifndef _OBJDB_H
+#define _OBJDB_H
+
+/*main*/
+extern int main();
+extern char dbname[255];
+extern char fname[255];
+extern char objname[255];
+extern FILE *f,*fptr;
+
+/*db initialisation*/
+extern void init();
+
+/*opens a new db and checks if the db has the correct form*/
+extern int open();
+
+/*searches for objects in the db*/
+extern int find();
+
+/*imports an object in the db*/
+extern int import();
+
+/*exports an object from the db in a file*/
+extern int export();
+
+/*deletes an object from the db*/
+extern int delete();
+
+/*closes the current db*/
+extern int close_db();
+
+/*initialises a char array*/
+extern void char_init();
+
+#endif

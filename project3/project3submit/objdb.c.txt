@@ -1,0 +1,578 @@
+#include <stdio.h>
+#include <string.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include "objdb.h"
+
+void char_init(char array[],int size){
+    int i;
+
+    for(i=0;i<size;i++){
+        array[i]='\0';
+    }
+}
+
+void init(FILE **f,char *dbname){
+    int size=strlen(dbname),val;
+    char str[]="dummy c0de",matrix[255];
+
+    
+    char_init(matrix,255);
+    rewind(*f);
+    val=fwrite(str,1,sizeof(str),*f);
+    if(val!=sizeof(str)){
+        fprintf(stderr,"Error in init function.\n");
+        fclose(*f);
+        return  ;
+    }
+    val=fwrite(matrix,1,244,*f);
+    if(val!=244){
+        fprintf(stderr,"Error in init function.\n");
+        return  ;
+    }
+    fclose(*f);
+    truncate(dbname,255-size);
+    (*f)=fopen(dbname,"ab+");
+    if(ferror(*f)!=0) {
+        fprintf(stderr,"Error in init function.\n");
+        fclose(*f);
+        return  ;
+    }
+    val=fwrite(dbname,1,size,*f);
+    if(val!=size){
+        fprintf(stderr,"Error in init function.\n");
+        fclose(*f);
+        return  ;
+    }
+    val=fwrite("\0",1,1,*f);
+    if(val!=1){
+        fprintf(stderr,"Error in init function.\n");
+        fclose(*f);
+        return  ;
+    }
+}
+
+int open(FILE **f,char *dbname,int res_open){
+    char buff[11]="\0";
+
+    if(res_open!=0){
+       close_db(f,dbname);
+    }
+
+    if(access(dbname,F_OK)!=-1){
+        (*f)=fopen(dbname,"ab+");
+        if((*f)==NULL) {
+            return  -2;
+        }
+        rewind(*f);
+        fread(buff,1,11,*f);
+        if(ferror(*f)!=0) {
+            fclose(*f);
+            return  -2;
+        }
+        clearerr(*f);
+        if(strcmp(buff,"\0")==0){
+            fclose(*f);
+            return 0;
+        }
+        if(strcmp(buff,"dummy c0de")!=0){
+            fclose(*f);
+            return 0;
+        }
+        else{
+            fclose(*f);
+            return 1;
+        }
+    }
+
+    (*f)=fopen(dbname,"ab+");
+    if((*f)==NULL){
+        return -1;
+    }
+    init(f,dbname);
+    fclose(*f);
+
+return 1;
+}
+
+int import(FILE **f,FILE **fptr,char *fname,char *objname,char *dbname,char ***res_find,int res_open){
+    int i=1,j,pos=0,name_size=strlen(objname),flag=0,val,read_val=0; //i metavliti flag oysiastika energei os parametros gia na grafoyn ta stoixeia toy arxeioy an einai megalytera i oxi toy 512 kai vrsikei to megethos toy arxeioy
+    char elements[512];
+    long int size;
+
+    char_init(elements,512);
+    val=find(f,fname,objname,dbname,res_find,0);
+    for(j=0;j<val;j++){
+        if(strcmp((*res_find)[j],objname)==0){
+            return -1;
+        }
+    }
+
+    while(1){
+        (*fptr)=fopen(fname,"rb+");
+        if(*fptr==NULL){
+            return 0;
+        }
+
+        if(flag==0){
+            fseek(*fptr,0,SEEK_END);
+            size=ftell(*fptr);
+            rewind(*fptr);
+        }
+        /*diavasma tou megethoys tou arxeiou*/
+        if(flag==1){
+            if(size<512){
+                fseek(*fptr,pos,SEEK_SET);
+                pos=pos+size;
+            }
+            else{
+                fseek(*fptr,pos,SEEK_SET);
+                i++;
+                pos=512*i;
+            }
+        }
+
+        if(size<512){
+            fread(elements,1,size,*fptr);
+            if(ferror(*fptr)){
+                fclose(*fptr);
+                return -2;
+            }
+        }
+        else{
+            fread(elements,1,sizeof(elements),*fptr);
+            if(ferror(*fptr)){
+                fclose(*fptr);
+                return -2;
+            }
+        }
+        fclose(*fptr);
+        if(elements[0]=='\0'&&elements[1]=='\0'&&elements[2]=='\0'){
+            break;
+        }
+
+        (*f)=fopen(dbname,"ab+");
+        if((*f)==NULL) {
+            return  -2;
+        }
+        if(flag==0){
+            read_val=fwrite(objname,1,name_size,*f);/*onoma*/
+            if(read_val!=name_size){
+                fclose(*f);
+                return  -2;
+            }
+            read_val=fwrite("*",1,1,*f);
+            if(read_val!=1){
+                fclose(*f);
+                return  -2;
+            }
+            read_val=fwrite(&size,sizeof(long),1,*f); /*file size*/
+            if(read_val!=1){
+                fclose(*f);
+                return  -2;
+            }
+            read_val=fwrite("*",1,1,*f);
+            if(read_val!=1){
+                fclose(*f);
+                return  -2;
+            }
+            read_val=fwrite("\0",1,1,*f);
+            if(read_val!=1){
+                fclose(*f);
+                return  -2;
+            }
+            pos=512;
+            flag=1;
+        }
+        if(size<=512){
+            read_val=fwrite(elements,1,size,*f); /*grapsimo twn stoixeiwn tou file*/
+            if(read_val!=size){
+                fclose(*f);
+                return  -2;
+            }
+        }
+        else{
+            read_val=fwrite(elements,1,sizeof(elements),*f);/*grapsimo twn stoixeiwn tou file*/
+            if(read_val!=sizeof(elements)){
+                fclose(*f);
+                return  -2;
+            }
+        }
+        char_init(elements,512);
+        if(size>512){
+            size=size-512;
+        }
+        fclose(*f);
+    }
+    (*f)=fopen(dbname,"ab+");
+    if((*f)==NULL) {
+        return  -2;
+    }
+    read_val=fwrite("\0",1,1,*f);
+    if(read_val!=1){
+        fclose(*f);
+        return  -2;
+    }
+    fclose(*f);
+
+    return 1;
+}
+
+int find(FILE **f,char *fname,char *objname,char *dbname,char ***res_find,int k){
+    int i=0,j=0,l=0,val=1,flag=0,check=1; //i metavliti "l" perna apo kathe thesi toy pinaka temp3-einai metritis ston pinaka res_find- kai i metavliti "j" to idio me thn prohgoumenh metavliti apla ayti kineitai kata mikos tou pinaka temp3
+    char str[255],temp1[255],*temp2,**temp3=(*res_find); //oi pinakes temp1,temp2 apothikeyoyn ta onomata kai o temp3 desmeyetai dynamika gia na apothikeysei to ekastote onoma
+    long int size=0; 
+
+    char_init(str,255);
+    char_init(temp1,255);
+    (*f)=fopen(dbname,"ab+");
+    if((*f)==NULL){
+        return -2;
+    }
+    fseek(*f,256,SEEK_SET);
+
+    if(k==0){
+        while(val==1){
+            while(1){
+                val=fread(&str[i],1,1,*f); /*diavasma tou onomatos h tou megethous*/
+                if(ferror(*f)){
+                    fclose(*f);
+                    return 2;
+                }
+                clearerr(*f);
+                if(str[i]=='\0' || str[i]=='*'){
+                    flag++; //h metavliti flag diasxizei to db byte pros byte kai "metraei" se poia thesi brisketai to onoma diladi an h str exei diavasei onoma kai oxi ta periexomena tou ekastote arxeiou
+                    break;
+                }
+                temp1[i]=str[i];
+                i++;
+            }
+            temp2=strstr(temp1,objname);
+            if(flag%2==0){ /*an diavasei megethos metakinei th thesi anagnosis*/
+                fseek(*f,-strlen(str)-1,SEEK_CUR);
+                fread(&size,sizeof(long),1,*f);
+                if(ferror(*f)){
+                    fclose(*f);
+                    return -2;
+                }
+                clearerr(*f);
+                fseek(*f,3+size,SEEK_CUR);
+                char_init(str,255);
+                char_init(temp1,255);
+                i=0;
+                continue;
+            }
+            if(temp2!=NULL){ /*apothikeusei tou epithimitoy onomatos*/
+                strcpy(temp3[l],temp1);
+                (*res_find)[j]=temp3[l];
+                j++;
+                l++;
+            }
+            char_init(str,255);
+            char_init(temp1,255);
+            i=0;
+            size=0;
+        }
+    }
+
+    /*idia me thn find apla apothikeuei kathe onoma*/
+    if(k==1){
+        while(val==1){
+            while(1){
+                val=fread(&str[i],1,1,*f);
+                if(ferror(*f)){
+                    fclose(*f);
+                    return -2;
+                }
+                clearerr(*f);
+                if(str[i]=='\0' || str[i]=='*'){
+                    check++; // i metavliti check elegxei an ayta poy exoyme diavasei sto str einai ontos onoma enos arxeioy kai oxi ta periexomena tou ekastote arxeiou
+                    flag++;
+                    break;
+                }
+                temp1[i]=str[i];
+                i++;
+            }
+            if(check%2==0&&temp1[0]!='\0'){
+                strcpy(temp3[l],temp1);
+                (*res_find)[j]=temp3[l];
+                j++;
+                l++;
+            }
+            if(flag%2==0){
+                fseek(*f,-strlen(str)-1,SEEK_CUR);
+                fread(&size,sizeof(long),1,*f);
+                if(ferror(*f)){
+                    fclose(*f);
+                    return -2;
+                }
+                clearerr(*f);
+                fseek(*f,3+size,SEEK_CUR);
+            }
+            char_init(str,255);
+            char_init(temp1,255);
+            i=0;
+            size=0;
+        }
+    }
+
+    fclose(*f);
+    return j;
+}
+
+int export(FILE **f,FILE **fptr,char *fname,char *objname,char *dbname,char ***res_find){
+    int i=0,j=0,flag=0,val=0,counter=0; //i flag elexei an yparxei to arxeio
+    char elements[512],str[255],temp1[255]; //i str diavazei to epithimito onoma kai i temp1 to apothikeyei
+    long int pos,size=0;
+
+    char_init(elements,512);
+    char_init(str,255);
+    char_init(temp1,255);
+    val=find(f,fname,objname,dbname,res_find,0);
+
+    for(j=0;j<val;j++){
+        if(strcmp((*res_find)[j],objname)==0){
+            flag=1;
+            break;
+        }
+    }
+    if(flag==0){
+        return -1;
+    }
+    j=0;
+    flag=0;
+
+    if(access(fname,F_OK)!=-1){
+        return 0;
+    }
+
+    (*f)=fopen(dbname,"rb+");
+    if((*f)==NULL){
+        return -2;
+    }
+    rewind(*f);
+    fseek(*f,256,SEEK_SET);
+    while(1){
+
+        while(1){ /*euresh tou epithimitou onomatos*/
+            val=fread(&str[i],1,1,*f);
+            if(ferror(*f)){
+                fclose(*f);
+                return -2;
+            }
+            clearerr(*f);
+            if(str[i]=='\0' || str[i]=='*'){
+                counter++;
+                break;
+            }
+            temp1[i]=str[i];
+            i++;
+        }
+        if(counter%2==0){ /*metakinei thesi anagnosis opws sthn find*/
+            fseek(*f,-strlen(str)-1,SEEK_CUR);
+            fread(&size,sizeof(long),1,*f);
+            if(ferror(*f)){
+                fclose(*f);
+                return -2;
+            }
+            clearerr(*f);
+            fseek(*f,3+size,SEEK_CUR);
+            char_init(str,255);
+            char_init(temp1,255);
+            i=0;
+            continue;
+        }
+
+        if(strstr(temp1,objname)!=NULL){
+            fread(&size,sizeof(long),1,*f);
+            if(ferror(*f)){
+                fclose(*f);
+                return -2;
+            }
+            clearerr(*f);
+            fseek(*f,2,SEEK_CUR);
+            while(1){ /*diavasma periexomenwn*/
+                if(size<512){
+                    fread(elements,1,size,*f);
+                    if(ferror(*f)){
+                        fclose(*f);
+                        return -2;
+                    }
+                    clearerr(*f);
+                }
+                else{
+                    fread(elements,1,sizeof(elements),*f);
+                    if(ferror(*f)){
+                        fclose(*f);
+                        return -2;
+                    }
+                    clearerr(*f);
+                }
+                pos=ftell(*f);
+                fclose(*f);
+                (*fptr)=fopen(fname,"ab+");
+                if(*fptr==NULL){
+                    return 0;
+                } /*grapsimo periexomenwn*/
+                if(size<512){
+                    fwrite(elements,1,size,*fptr);
+                    if(ferror(*fptr)){
+                        fclose(*fptr);
+                        return -2;
+                    }
+                    clearerr(*fptr);
+                }
+                else{
+                    fwrite(elements,1,sizeof(elements),*fptr);
+                    if(ferror(*fptr)){
+                        fclose(*fptr);
+                        return -2;
+                    }
+                    clearerr(*fptr);
+                }
+                char_init(elements,512);
+                fclose(*fptr);
+                (*f)=fopen(dbname,"rb+");
+                if((*f)==NULL){
+                    return -2;
+                }
+                rewind(*f);
+                fseek(*f,pos,SEEK_SET);
+                if(size<=512){
+                    flag=1;
+                    break;
+                }
+                else{
+                    size=size-512;
+                }
+            }
+        }
+        if(val==0||flag==1){
+            break;
+        }
+        char_init(str,255);
+        char_init(temp1,255);
+        i=0;
+        j=0;
+    }
+    fclose(*f);
+    return 1;
+}
+
+int delete(FILE **f,char *fname,char *objname,char *dbname,char ***res_find){
+    int i=0,j=0,val,flag=0,del_num,name_size=strlen(objname),end=1,counter=0; //i flag elexei an yparxei to arxeio
+    char elements[512],str[255],temp1[255];//i str diavazei to epithimito onoma kai i temp1 to apothikeyei
+    long int pos1,pos2,size=0;
+
+    char_init(elements,512);
+    char_init(str,255);
+    char_init(temp1,255);
+    val=find(f,fname,objname,dbname,res_find,0);
+    for(j=0;j<val;j++){
+        if(strcmp((*res_find)[j],objname)==0){
+            flag=1;
+            break;
+        }
+    }
+    if(flag==0){
+        return -1;
+    }
+    flag=0;
+    
+    (*f)=fopen(dbname,"rb+");
+    if((*f)==NULL){
+        return -2;
+    }
+    rewind(*f);
+    fseek(*f,256,SEEK_SET);
+
+    while(1){
+        while(1){ /*euresh tou epithimitou onomatos*/
+            val=fread(&str[i],1,1,*f);
+            if(ferror(*f)){
+                fclose(*f);
+                return -2;
+            }
+            clearerr(*f);
+            if(str[i]=='\0' || str[i]=='*'){
+                counter++;
+                break;
+            }
+            temp1[i]=str[i];
+            i++;
+        }
+        if(counter%2==0){ /* metakinei th thesi anagnosis*/
+            fseek(*f,-strlen(str)-1,SEEK_CUR);
+            fread(&size,sizeof(long),1,*f);
+            if(ferror(*f)){
+                fclose(*f);
+                return -2;
+            }
+            clearerr(*f);
+            fseek(*f,3+size,SEEK_CUR);
+            char_init(str,255);
+            char_init(temp1,255);
+            i=0;
+            continue;
+        }
+        if(strstr(temp1,objname)!=NULL){
+            fread(&size,sizeof(long),1,*f);
+            if(ferror(*f)){
+                fclose(*f);
+                return -2;
+            }
+            clearerr(*f);
+            del_num=name_size+size+11;
+            fseek(*f,-9-name_size,SEEK_CUR);
+            pos1=ftell(*f);
+            for(i=0;i<del_num;i++){ /*allazei ta periexomena kai to onoma toy epithimitou arxeiou se '\0'*/
+                fwrite("\0",1,1,*f);
+            }
+            fseek(*f,1,SEEK_CUR);
+            while(1){ /*metakinei ta periexomena tou db kata del_num aristera*/
+                end=fread(elements,1,sizeof(elements),*f);
+                if(ferror(*f)){
+                    fclose(*f);
+                    return -2;
+                }
+                clearerr(*f);
+                if(end==0){
+                    break;
+                }
+                pos2=ftell(*f);
+                fseek(*f,pos1,SEEK_SET);
+                fwrite(elements,1,end,*f);
+                if(ferror(*f)){
+                    fclose(*f);
+                    return -2;
+                }
+                clearerr(*f);
+                pos1=ftell(*f);
+                fseek(*f,pos2,SEEK_SET);
+                char_init(elements,512);
+            }
+        }
+        if(val==0||end==0){
+            break;
+        }
+        char_init(str,255);
+        char_init(temp1,255);
+        i=0;
+        j=0;
+    }
+    /*kopsimo toy arxeiou*/
+    fseek(*f,0,SEEK_END);
+    pos1=ftell(*f);
+    fclose(*f);
+    truncate(dbname,pos1-del_num-1);
+    return 1;
+}
+
+int close_db(FILE **f,char *dbname){
+    (*f)=fopen(dbname,"rb+");
+    if((*f)==NULL) {
+        return -2;
+    }
+    fclose(*f);
+    return 0;
+}
