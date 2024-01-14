@@ -1,0 +1,97 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <unistd.h>
+#include <sys/select.h>
+#include <sys/stat.h>
+
+
+int max(int num1, int num2){
+    return (num1 > num2 ) ? num1 : num2;
+}
+
+//the select command allows the programm not to block if stdin is empty
+int main(int argc , char *argv[]){
+    int value=0,i=0,j=0,flag=0,num1=0,num2=0,res1=0,res2=0,grade=0,retvat;
+    char arr1[64]={0},arr2[64]={0};
+    FILE *f;
+     
+    fd_set readfds;
+    FD_ZERO(&readfds);
+    FD_SET(STDIN_FILENO, &readfds);
+    fd_set savefds=readfds;
+
+    struct timeval timeout;
+    timeout.tv_sec=0;
+    timeout.tv_usec=10000000;
+
+    while(1){
+        f=fopen(argv[1],"r");
+        if(flag==1){ //seeks the needed position if file size > 64
+            fseek(f,j*64,SEEK_SET);
+            fseek(stdin,j*64,SEEK_SET);
+        }
+        num1=fread(arr1,1,sizeof(arr1),f);
+        res1=res1+num1;
+        num1=0;
+        fclose(f);
+        retvat=select(1,&readfds,NULL,NULL,&timeout);
+        if(retvat>0){
+            num2=fread(arr2,1,sizeof(arr2),stdin);
+        }
+        readfds=savefds;
+        res2=res2+num2;
+        num2=0;
+        if(arr1[0]==0 && arr2[0]==0){
+            break;
+        }
+        if(res1==res2){
+            for(i=0;i<res1;i++){
+                if(arr1[i]==arr2[i]){
+                    if(arr1[i]==0 && arr2[i]==0){
+                        break;
+                    }
+                    value++;
+                }
+                arr1[i]=0;
+                arr2[i]=0;
+                flag=1;
+            }
+        }
+        if(res1>res2){
+            for(i=0;i<res1;i++){
+                if(arr1[i]==arr2[i]){
+                    if(arr1[i]==0 && arr2[i]==0){
+                        break;
+                    }
+                    value++;
+                }
+                arr1[i]=0;
+                arr2[i]=0;
+                flag=1;
+            }
+        }
+        if(res1<res2){
+            for(i=0;i<res2;i++){
+                if(arr1[i]==arr2[i]){
+                    if(arr1[i]==0 && arr2[i]==0){
+                        break;
+                    }
+                    value++;
+                }
+                arr1[i]=0;
+                arr2[i]=0;
+                flag=1;
+            }
+        }
+        j++;
+    }
+    
+    if(res1==0 && res2==0){
+        grade=100;
+    }
+    else{
+        grade=(100*value)/max(res1,res2); //finds grade
+    }
+    return grade;
+}
